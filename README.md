@@ -53,7 +53,8 @@ Thanks, I try.
 
 Method 1
 
-* Use [Eclipse](https://www.eclipse.org/downloads/) with [IvyDE](https://marketplace.eclipse.org/content/apache-ivyde%E2%84%A2)
+* Use [Eclipse](https://www.eclipse.org/downloads/) with [IvyDE](https://marketplace.eclipse.org/content/apache-ivyde%E2%84%A2) (use the update site method [here](http://ant.apache.org/ivy/ivyde/download.cgi) if the marketplace version does not work)
+* Clone the project locally
 * [Right-click and package as JAR](https://help.eclipse.org/luna/topic/org.eclipse.jdt.doc.user/tasks/tasks-37.htm)
 * Use [Launch4j](http://launch4j.sourceforge.net/) to make a .EXE
 
