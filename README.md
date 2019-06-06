@@ -51,5 +51,7 @@ Thanks, I try.
 
 # How can I build the source?
 
-Use [Eclipse](https://www.eclipse.org/downloads/) with [IvyDE](https://marketplace.eclipse.org/content/apache-ivyde%E2%84%A2)
+* Use [Eclipse](https://www.eclipse.org/downloads/) with [IvyDE](https://marketplace.eclipse.org/content/apache-ivyde%E2%84%A2)
+* [Right-click and package as JAR](https://help.eclipse.org/luna/topic/org.eclipse.jdt.doc.user/tasks/tasks-37.htm)
+* Use [Launch4j](http://launch4j.sourceforge.net/) to make a .EXE
 
