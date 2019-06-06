@@ -5,11 +5,18 @@
                    "http://ant.apache.org/ivy/schemas/ivy.xsd">
   <info organisation="au.id.gar" module="elitespecial"/>
   
-   
-  <dependencies>
+  <configurations defaultconfmapping="compile">
+	  <conf name="compile"/>
+	  <conf name="sources"/>
+	  <conf name="javadoc"/>
+  </configurations>	  
+  <dependencies defaultconf="compile->default;javadoc->javadoc;sources->sources">
 	<dependency org="com.thoughtworks.xstream" name="xstream" rev="1.4.9"/>
 	<dependency org="org.jscience" name="jscience" rev="4.3.1"/>
 	<dependency org="org.bushe" name="eventbus" rev="1.4"/>
+	<dependency org="joda-time" name="joda-time" rev="2.10.2"/>
+	<dependency org="org.codehaus.jettison" name="jettison" rev="1.2"/>
+
 
   </dependencies>
 </ivy-module>

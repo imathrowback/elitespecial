@@ -1,5 +1,4 @@
 <ivysettings>
-  <caches defaultCacheDir="L:\downloads\ivy2_cache\cache"/>
   <settings defaultResolver="default"/>
   <resolvers>
   	<chain name="default">
