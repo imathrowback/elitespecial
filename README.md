@@ -48,3 +48,8 @@ But if you look through my history, [other tools I've written](https://www.reddi
 # Your code is terrible!
 
 Thanks, I try.
+
+# How can I build the source?
+
+Use [Eclipse](https://www.eclipse.org/downloads/) with [IvyDE](https://marketplace.eclipse.org/content/apache-ivyde%E2%84%A2)
+
