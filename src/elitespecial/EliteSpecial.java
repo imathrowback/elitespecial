@@ -647,7 +647,11 @@ public class EliteSpecial
 		Set<String> list = Collections.synchronizedSet(new TreeSet<>());
 
 		File[] files = new File(journalDirectory).listFiles();
-
+		if (files == null || files.length == 0)
+		{
+			EventBus.publish(new EventData(new Date(), "ERROR", "", "Invalid directory specified", false));
+			return list;
+		}
 		Integer totalSize = files.length;
 		AtomicInteger scanIndex = new AtomicInteger(0);
 

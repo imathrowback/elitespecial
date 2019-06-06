@@ -2,6 +2,7 @@ package elitespecial;
 
 import java.awt.BorderLayout;
 import java.awt.EventQueue;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.prefs.BackingStoreException;
 import java.util.prefs.Preferences;
@@ -19,6 +20,7 @@ import java.awt.GridBagLayout;
 import java.awt.GridBagConstraints;
 import java.awt.Insets;
 import java.awt.event.*;
+import java.io.File;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
@@ -28,6 +30,7 @@ public class MainForm extends JFrame implements EventSubscriber<ScanParse>
 	String journalDirectory = "";
 	int days = 0;
 	EliteSpecial es;
+	BusScanEventHandler scanEventHandler = new BusScanEventHandler(this);
 
 	private final JPanel contentPane;
 	private final JTable table;
@@ -51,12 +54,34 @@ public class MainForm extends JFrame implements EventSubscriber<ScanParse>
 		}
 	}
 
+	static String getFrontierSavedGAmesDirectory()
+	{
+		String homeDir = System.getProperty("user.home");
+		String savedGames = "Saved Games";
+
+		// try to find saved games for frontier
+		for (File f : Arrays.asList(new File(homeDir).listFiles()))
+		{
+			if (f.isDirectory())
+			{
+				Path test = Paths.get(homeDir, f.getName(), "Frontier Developments",
+						"Elite Dangerous");
+				if (test.toFile().exists())
+				{
+					savedGames = f.getName();
+					break;
+				}
+			}
+		}
+		return Paths.get(homeDir, savedGames, "Frontier Developments",
+				"Elite Dangerous").toString();
+	}
+
 	void readPreferences()
 	{
 		Preferences prefs = Preferences.userNodeForPackage(MainForm.class);
-		Path defJournalDir = Paths.get(System.getProperty("user.home"), "Saved Games", "Frontier Developments",
-				"Elite Dangerous");
-		journalDirectory = prefs.get("journalDirectory", defJournalDir.toString());
+
+		journalDirectory = prefs.get("journalDirectory", getFrontierSavedGAmesDirectory());
 		days = prefs.getInt("days", 365);
 
 	}
@@ -155,6 +180,7 @@ public class MainForm extends JFrame implements EventSubscriber<ScanParse>
 
 	private final JButton btnRescan;
 	private final JLabel lblNewLabel_2;
+	private final JButton browseFolderButton;
 
 	void beginScan()
 	{
@@ -216,10 +242,10 @@ public class MainForm extends JFrame implements EventSubscriber<ScanParse>
 		panel = new JPanel();
 		contentPane.add(panel, BorderLayout.NORTH);
 		GridBagLayout gbl_panel = new GridBagLayout();
-		gbl_panel.columnWidths = new int[] { 112, 212 };
-		gbl_panel.rowHeights = new int[] { 20, 20, 0, 0 };
-		gbl_panel.columnWeights = new double[] { 0.0, 1.0 };
-		gbl_panel.rowWeights = new double[] { 0.0, 0.0, 0.0, Double.MIN_VALUE };
+		gbl_panel.columnWidths = new int[] { 112, 212, 0 };
+		gbl_panel.rowHeights = new int[] { 20, 20, 0, 0, 0 };
+		gbl_panel.columnWeights = new double[] { 0.0, 1.0, 0.0 };
+		gbl_panel.rowWeights = new double[] { 0.0, 0.0, 0.0, 0.0, Double.MIN_VALUE };
 		panel.setLayout(gbl_panel);
 
 		lblNewLabel = new JLabel("Days old");
@@ -276,6 +302,7 @@ public class MainForm extends JFrame implements EventSubscriber<ScanParse>
 			}
 		});
 		GridBagConstraints gbc_journalTextField = new GridBagConstraints();
+		gbc_journalTextField.anchor = GridBagConstraints.NORTH;
 		gbc_journalTextField.insets = new Insets(0, 0, 5, 0);
 		gbc_journalTextField.fill = GridBagConstraints.BOTH;
 		gbc_journalTextField.gridx = 1;
@@ -309,24 +336,57 @@ public class MainForm extends JFrame implements EventSubscriber<ScanParse>
 			}
 		});
 		GridBagConstraints gbc_btnRescan = new GridBagConstraints();
-		gbc_btnRescan.insets = new Insets(0, 0, 0, 5);
+		gbc_btnRescan.insets = new Insets(0, 0, 5, 5);
 		gbc_btnRescan.gridx = 0;
 		gbc_btnRescan.gridy = 2;
 		panel.add(btnRescan, gbc_btnRescan);
 
 		lblNewLabel_2 = new JLabel("...Automatic Refresh Enabled...");
 		GridBagConstraints gbc_lblNewLabel_2 = new GridBagConstraints();
+		gbc_lblNewLabel_2.insets = new Insets(0, 0, 5, 0);
 		gbc_lblNewLabel_2.gridx = 1;
 		gbc_lblNewLabel_2.gridy = 2;
 		panel.add(lblNewLabel_2, gbc_lblNewLabel_2);
 
-		EventQueue.invokeLater(new Runnable() {
+		browseFolderButton = new JButton("Browse...");
+		browseFolderButton.addActionListener(new ActionListener() {
 			@Override
-			public void run()
+			public void actionPerformed(final ActionEvent e)
 			{
-				beginScan();
+				JFileChooser chooser = new JFileChooser(System.getProperty("user.home"));
+				chooser.setDialogTitle("Choose Frontier Games/Elite Dangerous directory");
+				chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+				if (chooser.showOpenDialog(browseFolderButton) == JFileChooser.APPROVE_OPTION)
+				{
+					journalDirectory = chooser.getSelectedFile().toString();
+					journalTextField.setText(journalDirectory);
+				}
+
 			}
 		});
+		browseFolderButton.setVerticalAlignment(SwingConstants.TOP);
+		GridBagConstraints gbc_browseFolderButton = new GridBagConstraints();
+		gbc_browseFolderButton.fill = GridBagConstraints.BOTH;
+		gbc_browseFolderButton.insets = new Insets(0, 0, 5, 5);
+		gbc_browseFolderButton.gridx = 2;
+		gbc_browseFolderButton.gridy = 1;
+		panel.add(browseFolderButton, gbc_browseFolderButton);
+
+		if (new File(journalDirectory).isDirectory())
+		{
+			EventQueue.invokeLater(new Runnable() {
+				@Override
+				public void run()
+				{
+					beginScan();
+				}
+			});
+		} else
+		{
+			JOptionPane.showMessageDialog(MainForm.this, journalDirectory + " is not a valid directory",
+					"Invalid Directory",
+					JOptionPane.ERROR_MESSAGE);
+		}
 
 	}
 
@@ -337,6 +397,8 @@ public class MainForm extends JFrame implements EventSubscriber<ScanParse>
 			@Override
 			public void run()
 			{
+				if (event.type.contains("ERROR"))
+					addEvent(new EventData(new Date(), "ERROR", "", event.type, false));
 				if (event.totalSize == 0)
 					lblNewLabel_2.setText(event.type);
 				else
