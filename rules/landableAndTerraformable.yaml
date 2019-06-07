@@ -1,0 +1,5 @@
+name: "landableAndTerraformable"
+description: "Planets that are landable and have atmosphere"
+condition: "b.TerraformState != null && !(b.TerraformState.isEmpty()) && body.Landable  "
+actions:
+  - "writer.println(\"is landable and \" + b.TerraformState);"

@@ -1,0 +1,5 @@
+name: "landableWithAtmo"
+description: "Planets that are landable"
+condition: "body.Landable && (!(body.Atmosphere == 'None') && !(body.AtmosphereType == 'None'))  "
+actions:
+  - "writer.println(\"Landable and has atmosphere\");"

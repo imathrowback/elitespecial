@@ -16,7 +16,16 @@
 	<dependency org="org.bushe" name="eventbus" rev="1.4"/>
 	<dependency org="joda-time" name="joda-time" rev="2.10.2"/>
 	<dependency org="org.codehaus.jettison" name="jettison" rev="1.2"/>
-
-
+	<dependency org="org.jeasy" name="easy-rules-core" rev="3.3.0"/>
+	<dependency org="org.jeasy" name="easy-rules-mvel" rev="3.3.0"/>
+	<dependency org="org.jeasy" name="easy-rules-support" rev="3.3.0"/>
+	<dependency org="org.slf4j" name="slf4j-simple" rev="1.7.26"/>
+	<dependency org="org.mvel" name="mvel2" rev="2.4.3.Final"/>
+	<!-- slf4j-api has incorrect test-jar conf, so we need to force it to download by forcing the conf
+	 see: https://stackoverflow.com/questions/51113989/why-is-logback-classic-not-downloading-slf4j-api-in-my-ivy-setup 
+	 -->
+	<dependency org="org.slf4j" name="slf4j-api" rev="1.7.26" conf="*->default"/>
+	
+	
   </dependencies>
 </ivy-module>

@@ -1,4 +1,4 @@
-<project name="riftools" xmlns:ivy="antlib:org.apache.ivy.ant" default="jar">
+<project name="elitespecial" xmlns:ivy="antlib:org.apache.ivy.ant" default="jar">
 
 	<property name="jarfile" value="build/jar/elitespecial.jar"/>
 	<property name="MainClass" value="elitespecial.MainForm"/>
@@ -22,6 +22,7 @@
 		<ivy:resolve file="${ivy.dep.file}" conf="${ivy.configurations}" log="download-only" refresh="true"/>
 		<ivy:cachepath pathid="compile.ivy.path" conf="compile"/>	
 		<ivy:retrieve pattern="build/jar/libs/[artifact]-[revision].[ext]"  type="jar" conf="compile" />
+		<ivy:retrieve pattern="build/jar/libs/[artifact]-[revision].[ext]"  type="test-jar" conf="compile" />
 		<ivy:retrieve pattern="build/jar/libs/[artifact]-[revision].[ext]"  type="bundle" conf="compile" />
 		 <!--<ivy:retrieve pattern="build/jar/libs/[artifact]-[revision]-sources.[ext]" conf="sources" />
 			 <ivy:retrieve pattern="build/jar/libs/[artifact]-[revision]-javadoc.[ext]" conf="javadoc" />

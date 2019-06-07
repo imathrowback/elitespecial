@@ -1,0 +1,5 @@
+name: "landableHighG"
+description: "Planets that are landable and have gravity over 3"
+condition: "b.grav()  > 3 && b.Landable  "
+actions:
+  - "writer.println(\"is landable and \" + b.TerraformState);"

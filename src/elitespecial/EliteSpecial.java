@@ -3,6 +3,7 @@ package elitespecial;
 import static javax.measure.unit.SI.METRE;
 
 import java.io.File;
+import java.io.FileReader;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.nio.file.*;
@@ -23,115 +24,49 @@ import javax.measure.unit.Unit;
 import org.bushe.swing.event.EventBus;
 import org.codehaus.jettison.json.JSONArray;
 import org.codehaus.jettison.json.JSONObject;
+import org.jeasy.rules.api.Facts;
+import org.jeasy.rules.api.Rule;
+import org.jeasy.rules.api.RuleListener;
+import org.jeasy.rules.api.Rules;
+import org.jeasy.rules.api.RulesEngine;
+import org.jeasy.rules.core.DefaultRulesEngine;
+import org.jeasy.rules.core.RulesEngineParameters;
+import org.jeasy.rules.mvel.MVELRule;
+import org.jeasy.rules.mvel.MVELRuleFactory;
+import org.jeasy.rules.support.YamlRuleDefinitionReader;
 import org.joda.time.DateTime;
 import org.joda.time.DurationFieldType;
 import org.joda.time.LocalDate;
 import org.joda.time.Period;
 import org.joda.time.format.PeriodFormat;
 import com.thoughtworks.xstream.XStream;
-import com.thoughtworks.xstream.annotations.XStreamOmitField;
 import com.thoughtworks.xstream.io.json.JettisonMappedXmlDriver;
-
-class Ring
-{
-	public String Name;
-	public String RingClass;
-	double MassMT;
-	double InnerRad;
-	double OuterRad;
-}
-
-class Parent
-{
-	String name;
-	long id;
-}
-
-class Event
-{
-	public Date timestamp;
-
-}
-
-class FSDJump extends Event
-{
-	String StarSystem;
-}
-
-class Body extends Event
-{
-	public double Radius;
-	public String BodyName;
-	public int BodyID;
-	public double SemiMajorAxis;
-	public double Periapsis;
-	public String StarType;
-	public double RotationPeriod;
-	public String Atmosphere;
-	public String AtmosphereType;
-	public String PlanetClass;
-	public String ScanType;
-	public double SurfacePressure;
-	public double Eccentricity;
-
-	public double grav()
-	{
-		return SurfaceGravity / 9.80665;
-	}
-
-	public boolean isStar()
-	{
-		return StarType != null && !StarType.isEmpty();
-	}
-
-	public boolean TidalLock;
-	public double SurfaceTemperature;
-	public double SurfaceGravity;
-	public double MassEM;
-	public boolean Landable;
-	public String event;
-	public double OrbitalPeriod;
-	public String system;
-	@XStreamOmitField
-	public List<Ring> Rings = new LinkedList<>();
-	public double DistanceFromArrivalLS;
-	@XStreamOmitField
-	public List<Parent> Parents = new LinkedList<>();
-	public List<Body> BodyParents = new LinkedList<>();
-	public List<Body> BodyChildren = new LinkedList<>();
-	public String TerraformState;
-	String ref;
-	public double OrbitalInclination;
-
-	String parentString()
-	{
-		String s = "";
-		for (Parent p : Parents)
-			s = s + p.id;
-		return s;
-	}
-
-	String parentNString()
-	{
-		String s = "";
-		for (Parent p : Parents)
-			s = s + p.name;
-		return s;
-	}
-
-	public String tLocked()
-	{
-		if (TidalLock)
-			return "tidally locked";
-		else
-			return "NOT tidally locked";
-	}
-}
 
 public class EliteSpecial
 {
 	static Unit<Length> LIGHT_SECOND = METRE.times(299792458);
+	static UnitConverter m2KM = SI.METER.getConverterTo(SI.KILOMETER);
+	static UnitConverter m2LS = SI.METER.getConverterTo(LIGHT_SECOND);
+	static UnitConverter K2C = SI.KELVIN.getConverterTo(SI.CELSIUS);
+	static UnitConverter kPaToAtmo = SI.PASCAL.getConverterTo(NonSI.ATMOSPHERE);
+	static double secToDays = 60 * 60 * 24;
+
+	static NumberFormat f = NumberFormat.getNumberInstance();
+
+	static Map<String, RecordEntry> records = new TreeMap<>();
+
 	public boolean shouldStop = false;
+	static private Comparator<Event> eventComparator=new Comparator<Event>() {
+		@Override
+		public int compare(final Event o1, final Event o2)
+		{
+			if (o1 == null || o2 == null || o1.timestamp == null || o2.timestamp == null)
+			{
+				System.err.println("Event or timestamp was null!:" + o1 + "," + o2);
+			}
+			return o1.timestamp.compareTo(o2.timestamp);
+		}
+	};
 
 	public void stop()
 	{
@@ -183,17 +118,7 @@ public class EliteSpecial
 				//	System.out.println("Review bodies");
 				//Map<String, Body> bodies = collectBodies(collectedEvents);
 
-				Set<Event> sortedEvents = new TreeSet<>(new Comparator<Event>() {
-					@Override
-					public int compare(final Event o1, final Event o2)
-					{
-						if (o1 == null || o2 == null || o1.timestamp == null || o2.timestamp == null)
-						{
-							System.err.println("Event or timestamp was null!:" + o1 + "," + o2);
-						}
-						return o1.timestamp.compareTo(o2.timestamp);
-					}
-				});
+				Set<Event> sortedEvents = new TreeSet<>(eventComparator);
 
 				parseEvents(collectedEvents, sortedEvents);
 
@@ -208,43 +133,6 @@ public class EliteSpecial
 
 	}
 
-	static class RecordEntry
-	{
-		public double min;
-		public Body bmin;
-		public double max;
-		public Body bmax;
-
-		public RecordEntry(final double x, final Body b)
-		{
-			min = max = x;
-			bmin = bmax = b;
-		}
-
-		public void update(final double x, final Body b)
-		{
-			if (x < min)
-			{
-				min = x;
-				bmin = b;
-			}
-			if (x > max)
-			{
-				max = x;
-				bmax = b;
-			}
-		}
-
-		@Override
-		public String toString()
-		{
-			return "" + f.format(min) + "[" + bmin.BodyName + "], " + f.format(max) + "[" + bmax.BodyName + "]";
-		}
-
-	}
-
-	static Map<String, RecordEntry> records = new TreeMap<>();
-	static NumberFormat f = NumberFormat.getNumberInstance();
 
 	public static String record(final String key, final double x, final Body b)
 	{
@@ -258,13 +146,52 @@ public class EliteSpecial
 
 		return f.format(x) + "(" + records.get(key) + ")";
 	}
+	
+	
+	
+	public static void main(String args[])
+	{
+		System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", "trace");
+		Set<Event> events = new TreeSet<>(eventComparator);
+		Body evt = new Body();
+		evt.timestamp = new Date();
+		evt.BodyName ="Test";
+		evt.Landable = true;
+		evt.TerraformState="Yes please";
+		evt.Atmosphere = "None";
+		evt.SurfaceGravity =1000000;
+		events.add(evt);
+		check(events, (e) -> { System.err.println(e); });
+	}
 
 	public static void check(final Set<Event> sortedEvents, final Consumer<EventData> eventConsumer)
 	{
-		Unit<Length> LIGHT_SECOND = METRE.times(299792458);
-		UnitConverter m2KM = SI.METER.getConverterTo(SI.KILOMETER);
-		UnitConverter m2LS = SI.METER.getConverterTo(LIGHT_SECOND);
-		UnitConverter K2C = SI.KELVIN.getConverterTo(SI.CELSIUS);
+		Rules rules = new Rules();
+		MVELRuleFactory ruleFactory = new MVELRuleFactory(new YamlRuleDefinitionReader());
+		for (File f : new File("rules").listFiles())
+			try
+			{
+				MVELRule r = (MVELRule)ruleFactory.createRule(new FileReader(f));
+				
+				
+				System.out.println("Try to register rule:" + f + ":" + r);
+				rules.register(r);
+			}
+			catch (Exception ex)
+			{
+				ex.printStackTrace();
+			}
+		
+		
+		
+		RulesEngineParameters params = new RulesEngineParameters();
+		DefaultRulesEngine engine = new DefaultRulesEngine(params);
+		
+		
+		rules.forEach(e -> System.out.println("Rule registered: '" + e + "'"));
+		
+		
+		
 		TreeSet<String> alreadyDone = new TreeSet<>();
 		sortedEvents.forEach((evt) -> {
 			if (evt instanceof FSDJump)
@@ -272,7 +199,60 @@ public class EliteSpecial
 				FSDJump jump = (FSDJump) evt;
 				return;
 				//System.out.println(evt.timestamp + ": JUMP====> " + jump.StarSystem);
-			} else if (evt instanceof Body)
+			}
+			else if (evt instanceof Body) {
+				Body b = (Body) evt;
+				if (alreadyDone.contains(b.BodyName))
+					return;
+
+				StringWriter sw = new StringWriter();
+				PrintWriter writer = new PrintWriter(sw);
+
+				boolean binaryPair = false;
+				if (b.Parents.size() > 0)
+					binaryPair = b.Parents.get(0).name.equals("Null");
+
+				alreadyDone.add(b.BodyName);
+				
+				Facts facts = new Facts();
+				
+				facts.put("writer", writer);
+				facts.put("body", b);
+				facts.put("b", b);
+				facts.put("m2LS", EUnits.m2LS);
+				
+				
+				System.out.println("Fire engine!");
+				try
+				{
+					engine.fire(rules, facts);
+				}
+				catch (Exception ex)
+				{
+					ex.printStackTrace();
+				}
+
+				
+				
+				writer.flush();
+				String out = sw.getBuffer().toString();
+				System.out.println("Did we get anything?: " + out);
+				if (!out.isEmpty())
+				{
+					if (!out.contains("landable") && b.Landable)
+						out += ("\t is landable");
+					System.out.println(b.timestamp + ":" + "Body '" + b.BodyName + "'");
+					System.out.println(out);
+					out = out.replaceAll("\n", ":");
+					eventConsumer.accept(new EventData(b.timestamp, b.BodyName, b.PlanetClass, out, b.Landable));
+
+				}
+				
+
+			}
+			
+			
+			else if (evt instanceof Body && false) 
 			{
 				Body b = (Body) evt;
 				if (alreadyDone.contains(b.BodyName))
@@ -286,9 +266,7 @@ public class EliteSpecial
 					binaryPair = b.Parents.get(0).name.equals("Null");
 
 				alreadyDone.add(b.BodyName);
-				//UnitConverter LS2KM = NonSI.LIGHT_YEAR.se.METER.getConverterTo(SI.KILOMETER);
 
-				double secToDays = 60 * 60 * 24;
 				double rotationDays = b.RotationPeriod / secToDays;
 				double orbitalDays = b.OrbitalPeriod / secToDays;
 
@@ -334,10 +312,11 @@ public class EliteSpecial
 
 						double ils = Math.round(m2LS.convert(r.InnerRad) * 100.0) / 100.0;
 						double ols = Math.round(m2LS.convert(r.OuterRad) * 100.0) / 100.0;
-						int v = 3;
+						
+						int v = 1;
 
 						if (ils > v || ols > v)
-							writer.println("\t rings are greater than 1 light second " + ils + "-" + ols);
+							writer.println("\t rings are greater than " + v + " light second(s) " + ils + "-" + ols);
 					}
 				}
 
@@ -447,7 +426,6 @@ public class EliteSpecial
 				if (b.PlanetClass != null && b.PlanetClass.contains("gas giant") && b.parentString().contains("Planet"))
 					writer.println("\t is gas giant moon of a planet class " + b.BodyParents.get(0).PlanetClass);
 
-				UnitConverter kPaToAtmo = SI.PASCAL.getConverterTo(NonSI.ATMOSPHERE);
 				double atmo = kPaToAtmo.convert(b.SurfacePressure);
 				record("atmo", atmo, b);
 				// high pressure
@@ -536,20 +514,6 @@ public class EliteSpecial
 		xstream.alias("jump", FSDJump.class);
 
 		sortedEvents.addAll(parseScans(collectedEvents, xstream).values());
-		/*
-		collectedEvents.parallelStream().forEach(s -> {
-			if (!s.contains("\"event\":\"FSDJump"))
-				return;
-			FSDJump jump;
-
-			synchronized (xstream)
-			{
-				jump = (FSDJump) xstream.fromXML("{\"jump\": " + s + "}");
-			}
-			sortedEvents.add(jump);
-		});
-		*/
-
 	}
 
 	static Map<String, Body> parseScans(final Collection<String> collectedScans, final XStream xstream)
