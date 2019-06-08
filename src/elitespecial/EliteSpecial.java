@@ -10,8 +10,11 @@ import java.nio.file.WatchEvent.Kind;
 import java.text.NumberFormat;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
+import java.util.prefs.Preferences;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import javax.measure.converter.UnitConverter;
@@ -45,11 +48,40 @@ class Parent
 {
 	String name;
 	long id;
+
+	@Override
+	public String toString()
+	{
+		return name + ":" + id;
+	}
 }
 
 class Event
 {
+	static Comparator<Event> comp = Comparator.comparing(Event::getTimestamp).thenComparing(Event::getID);
+
+	public Event()
+	{
+
+	}
+
+	static long gid = 90;
+
+	long id = gid++;
+
+	public long getID()
+	{
+		if (id == 0)
+			id = gid++;
+		return id;
+	}
+
 	public Date timestamp;
+
+	public Date getTimestamp()
+	{
+		return timestamp;
+	}
 
 }
 
@@ -60,6 +92,13 @@ class FSDJump extends Event
 
 class Body extends Event
 {
+
+	@Override
+	public String toString()
+	{
+		return BodyName + ":" + BodyID;
+	}
+
 	public double Radius;
 	public String BodyName;
 	public int BodyID;
@@ -126,6 +165,17 @@ class Body extends Event
 		else
 			return "NOT tidally locked";
 	}
+
+	public List<Parent> getParents(final String string)
+	{
+		return Parents.stream().filter(p -> p.name.equals(string)).collect(Collectors.toList());
+	}
+
+	public Body getBodyParent(final long id)
+	{
+		return BodyParents.stream().filter(p -> p.BodyID == (int) id).findFirst().orElse(null);
+	}
+
 }
 
 public class EliteSpecial
@@ -183,17 +233,7 @@ public class EliteSpecial
 				//	System.out.println("Review bodies");
 				//Map<String, Body> bodies = collectBodies(collectedEvents);
 
-				Set<Event> sortedEvents = new TreeSet<>(new Comparator<Event>() {
-					@Override
-					public int compare(final Event o1, final Event o2)
-					{
-						if (o1 == null || o2 == null || o1.timestamp == null || o2.timestamp == null)
-						{
-							System.err.println("Event or timestamp was null!:" + o1 + "," + o2);
-						}
-						return o1.timestamp.compareTo(o2.timestamp);
-					}
-				});
+				Set<Event> sortedEvents = new TreeSet<>(Event.comp);
 
 				parseEvents(collectedEvents, sortedEvents);
 
@@ -259,6 +299,17 @@ public class EliteSpecial
 		return f.format(x) + "(" + records.get(key) + ")";
 	}
 
+	public static void main(final String args[]) throws Exception
+	{
+		Preferences prefs = Preferences.userNodeForPackage(MainForm.class);
+
+		String journalDirectory = prefs.get("journalDirectory", MainForm.getFrontierSavedGAmesDirectory());
+		int days = prefs.getInt("days", 365);
+
+		new EliteSpecial().go(journalDirectory, days, (e) -> {
+		});
+	}
+
 	public static void check(final Set<Event> sortedEvents, final Consumer<EventData> eventConsumer)
 	{
 		Unit<Length> LIGHT_SECOND = METRE.times(299792458);
@@ -275,6 +326,7 @@ public class EliteSpecial
 			} else if (evt instanceof Body)
 			{
 				Body b = (Body) evt;
+
 				if (alreadyDone.contains(b.BodyName))
 					return;
 
@@ -317,7 +369,7 @@ public class EliteSpecial
 					double dist = m2KM.convert(axis - radius);
 					record("dist", dist, b);
 					double per = (radius / axis) * 100.0;
-					if (m2LS.convert(axis) < 0.5)
+					if (m2LS.convert(axis) < 0.3)
 						//if (per > 16)
 						writer.println(
 								"\t is 'pretty close' to it's parent: dist(" + dist/*record("dist", dist, b)*/
@@ -338,7 +390,45 @@ public class EliteSpecial
 
 						if (ils > v || ols > v)
 							writer.println("\t rings are greater than 1 light second " + ils + "-" + ols);
+						if (m2KM.convert(r.OuterRad - r.InnerRad) < 300)
+							writer.println("\t rings are small in width "
+									+ f.format(m2KM.convert(r.OuterRad - r.InnerRad)));
 					}
+				}
+
+				//System.out.println("[" + b.BodyName + "] binary pair?" + binaryPair);
+				if (binaryPair)
+				{
+					Set<Body> siblings = getBinarySiblings(b);
+					//if (siblings.size() > 3)
+					//writer.println("\t Multi orbiting x" + siblings.size());
+					String name = "Binary pair";
+					if (siblings.size() == 3)
+						name = "Trinary triplet";
+					else if (siblings.size() > 3)
+						name = "Multi[" + siblings.size() + "] orbiting";
+					name = "";
+					//System.out.println("Found siblings[" + siblings + "] of body " + b.BodyName);
+					Body xa = null;
+					Body xb = null;
+					double min = Double.MAX_VALUE;
+					Body aa = b;
+					//for (Body aa : siblings)
+					for (Body bb : siblings)
+
+						if (aa != bb && b.parentString().equals(bb.parentString()))
+						{
+
+							min = Math.min(min, Math.abs(aa.SemiMajorAxis + bb.SemiMajorAxis));
+							xa = aa;
+							xb = bb;
+						}
+
+					double km = m2KM.convert(min);
+					if (km < 25000)
+						writer.println("\t" + name + " really close to " + xb.BodyName + ", " + f.format(km) + " km");
+					//System.out.println(f.format(km));
+
 				}
 
 				// Planets within rings
@@ -361,17 +451,7 @@ public class EliteSpecial
 							{
 								if (!b.BodyParents.isEmpty())
 								{
-									// Try to cheat and guess our semimajor based on the difference of our LS and our parents LS
-									/*
-									if (binaryPair)
-									{
-										double parentLS = b.BodyParents.get(0).DistanceFromArrivalLS;
-										double bodyLS = b.DistanceFromArrivalLS;
-										double diffLS = bodyLS - parentLS;
-										semiMajor = LIGHT_SECOND.getConverterTo(SI.METER).convert(diffLS);
 
-									}
-									*/
 									Body parent = b.BodyParents.get(0);
 									if (parent.Rings != null && parent.Rings.size() > 0)
 									{
@@ -493,7 +573,7 @@ public class EliteSpecial
 				if (!b.BodyName.contains(" Ring") && isEmpty(b.StarType))
 				{
 					record("orbit", orbitalDays, b);
-					if (Math.abs(orbitalDays) < 0.20)
+					if (Math.abs(orbitalDays) < 0.30)
 						writer.println("\t has a fast orbital period: " + record("orbit", orbitalDays, b) + " and is "
 								+ b.tLocked());
 				}
@@ -511,7 +591,43 @@ public class EliteSpecial
 				}
 			}
 		});
+	}
 
+	private static Set<Body> getBinarySiblings(final Body b)
+	{
+		Set<Body> siblings = new TreeSet<>(Event.comp);
+		Set<Integer> nullIDs = b.getParents("Null").parallelStream().mapToInt(x -> (int) x.id).distinct().boxed()
+				.collect(Collectors.toSet());
+
+		for (Body bodyParent : b.BodyParents)
+		{
+			for (Body child : bodyParent.BodyChildren)
+			{
+				boolean match = child.getParents("Null").stream().mapToInt(x -> (int) x.id)
+						.anyMatch(x -> nullIDs.contains(x));
+				if (match)
+					siblings.add(child);
+			}
+		}
+
+		return siblings;
+
+		/*
+
+		List<Parent> nullParents = b.getParents("Null");
+		List<Parent> starParents = b.getParents("Star");
+
+		Body bodyParent = b.getBodyParent(starParent.id);
+		System.out.println(
+				"body parent for body[" + b.BodyName + "], star id[" + starParent.id + "] = " + bodyParent.BodyName);
+		return bodyParent.BodyChildren.stream().filter(x -> {
+			Parent pp = x.getParent("Null");
+			if (pp != null)
+				return x.getParent("Null").id == nullParent.id && x != b;
+			return false;
+		})
+				.collect(Collectors.toList());
+				*/
 	}
 
 	private static String getPeriod(final double orbitalPeriod)
@@ -525,35 +641,56 @@ public class EliteSpecial
 
 	}
 
+	static class XStreamProvider
+	{
+		LinkedBlockingQueue<XStream> streams = new LinkedBlockingQueue<>();
+
+		public XStreamProvider()
+		{
+			for (int i = 0; i < 8; i++)
+				streams.add(make());
+		}
+
+		public XStream checkout() throws InterruptedException
+		{
+			return streams.take();
+		}
+
+		public void checkin(final XStream str) throws InterruptedException
+		{
+			streams.put(str);
+		}
+
+		private XStream make()
+		{
+			XStream xstream = new XStream(new JettisonMappedXmlDriver());
+			xstream.ignoreUnknownElements();
+			xstream.autodetectAnnotations(true);
+			xstream.alias("bodyc", Body.class);
+			xstream.alias("Parents", Parent.class);
+			xstream.alias("Ring", Ring.class);
+			xstream.alias("jump", FSDJump.class);
+			return xstream;
+		}
+	}
+
 	private static void parseEvents(final Set<String> collectedEvents, final Set<Event> sortedEvents)
 	{
-		XStream xstream = new XStream(new JettisonMappedXmlDriver());
-		xstream.ignoreUnknownElements();
-		xstream.autodetectAnnotations(true);
-		xstream.alias("bodyc", Body.class);
-		xstream.alias("Parents", Parent.class);
-		xstream.alias("Ring", Ring.class);
-		xstream.alias("jump", FSDJump.class);
 
-		sortedEvents.addAll(parseScans(collectedEvents, xstream).values());
-		/*
-		collectedEvents.parallelStream().forEach(s -> {
-			if (!s.contains("\"event\":\"FSDJump"))
-				return;
-			FSDJump jump;
-
-			synchronized (xstream)
-			{
-				jump = (FSDJump) xstream.fromXML("{\"jump\": " + s + "}");
-			}
-			sortedEvents.add(jump);
-		});
-		*/
+		Map<String, Body> parsed = parseScans(collectedEvents);
+		sortedEvents.addAll(parsed.values());
+		if (sortedEvents.size() != parsed.size())
+		{
+			System.err.println("sorted [" + sortedEvents.size() + "] != parsed [" + parsed.size() + "]");
+			for (Body b : parsed.values())
+				System.out.println(b.id);
+		}
 
 	}
 
-	static Map<String, Body> parseScans(final Collection<String> collectedScans, final XStream xstream)
+	static Map<String, Body> parseScans(final Collection<String> collectedScans)
 	{
+		XStreamProvider xstrProvider = new XStreamProvider();
 		Map<String, Body> bodies = Collections.synchronizedMap(new TreeMap<>());
 		//for (String s : collectedScans)
 		Integer totalSize = (collectedScans.size());
@@ -568,10 +705,9 @@ public class EliteSpecial
 					return;
 
 				Body body;
-				synchronized (xstream)
-				{
-					body = (Body) xstream.fromXML("{\"bodyc\": " + s + "}");
-				}
+				XStream xstream = xstrProvider.checkout();
+				body = (Body) xstream.fromXML("{\"bodyc\": " + s + "}");
+				xstrProvider.checkin(xstream);
 				if (body == null || body.BodyName == null || bodies.containsKey(body.BodyName))
 				{
 					//System.err.println("XML parse failed " + s);
@@ -612,6 +748,7 @@ public class EliteSpecial
 						}
 					}
 				}
+
 				bodies.put(body.BodyName, body);
 			} catch (Exception ex)
 			{

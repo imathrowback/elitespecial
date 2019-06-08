@@ -4,6 +4,8 @@ import java.awt.BorderLayout;
 import java.awt.EventQueue;
 import java.util.Arrays;
 import java.util.Date;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.prefs.BackingStoreException;
 import java.util.prefs.Preferences;
 
@@ -12,9 +14,11 @@ import javax.swing.border.EmptyBorder;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableColumn;
 import javax.swing.table.TableColumnModel;
+import javax.swing.table.TableRowSorter;
 
 import org.bushe.swing.event.EventBus;
 import org.bushe.swing.event.EventSubscriber;
+import org.joda.time.DateTime;
 
 import java.awt.GridBagLayout;
 import java.awt.GridBagConstraints;
@@ -156,13 +160,14 @@ public class MainForm extends JFrame implements EventSubscriber<ScanParse>
 	public void addEvent(final EventData ed)
 	{
 		DefaultTableModel tm = (DefaultTableModel) table.getModel();
-		tm.addRow(new Object[] { ed.dateTime, ed.body, ed.bodyType, ed.landable, ed.text });
+		tm.addRow(new Object[] { new DateTime(ed.dateTime.getTime()), ed.body, ed.bodyType, ed.landable, ed.text });
 		table.changeSelection(table.getRowCount() - 1, 0, false, false);
 	}
 
 	public void clearEvents()
 	{
-		table.setModel(EventTableModel.getTableModel());
+		((EventTableModel) table.getModel()).clear();
+		//table.setModel(EventTableModel.getTableModel());
 	}
 
 	Runnable scanRunnable = () -> {
@@ -181,6 +186,9 @@ public class MainForm extends JFrame implements EventSubscriber<ScanParse>
 	private final JButton btnRescan;
 	private final JLabel lblNewLabel_2;
 	private final JButton browseFolderButton;
+	private final JPanel panel_1;
+	private final JLabel lblNewLabel_3;
+	private final JTextField alertSearch;
 
 	void beginScan()
 	{
@@ -210,6 +218,18 @@ public class MainForm extends JFrame implements EventSubscriber<ScanParse>
 
 	}
 
+	private void setAlertFilter(final String text)
+	{
+		TableRowSorter<EventTableModel> sorter = (TableRowSorter<EventTableModel>) table.getRowSorter();
+		try
+		{
+			sorter.setRowFilter(RowFilter.regexFilter("(?i)" + text, EventTableModel.getColumId("Alert")));
+		} catch (Exception ex)
+		{
+			// ignore errors
+		}
+	}
+
 	/**
 	 * Create the frame.
 	 */
@@ -227,13 +247,15 @@ public class MainForm extends JFrame implements EventSubscriber<ScanParse>
 		JScrollPane scrollPane = new JScrollPane();
 		contentPane.add(scrollPane, BorderLayout.CENTER);
 
-		table = new JTable();
 		//table.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
-		table.setModel(EventTableModel.getTableModel());
-		//table.getColumnModel().getColumn(1).setPreferredWidth(179);
-		//table.getColumnModel().getColumn(3).setPreferredWidth(54);
-		//table.getColumnModel().getColumn(3).setMaxWidth(60);
-		//table.getColumnModel().getColumn(4).setPreferredWidth(346);
+		EventTableModel tableModel = EventTableModel.getTableModel();
+
+		TableRowSorter<EventTableModel> sorter = new TableRowSorter<>(tableModel);
+		table = new JTable(tableModel);
+
+		List<RowSorter.SortKey> sortKeys = new LinkedList<>();
+		sortKeys.add(new RowSorter.SortKey(0, SortOrder.ASCENDING));
+		table.setRowSorter(sorter);
 
 		scrollPane.setViewportView(table);
 
@@ -243,9 +265,9 @@ public class MainForm extends JFrame implements EventSubscriber<ScanParse>
 		contentPane.add(panel, BorderLayout.NORTH);
 		GridBagLayout gbl_panel = new GridBagLayout();
 		gbl_panel.columnWidths = new int[] { 112, 212, 0 };
-		gbl_panel.rowHeights = new int[] { 20, 20, 0, 0, 0 };
-		gbl_panel.columnWeights = new double[] { 0.0, 1.0, 0.0 };
-		gbl_panel.rowWeights = new double[] { 0.0, 0.0, 0.0, 0.0, Double.MIN_VALUE };
+		gbl_panel.rowHeights = new int[] { 20, 20, 0, 0, 0, 0 };
+		gbl_panel.columnWeights = new double[] { 0.0, 1.0, 1.0 };
+		gbl_panel.rowWeights = new double[] { 0.0, 0.0, 0.0, 0.0, 1.0, Double.MIN_VALUE };
 		panel.setLayout(gbl_panel);
 
 		lblNewLabel = new JLabel("Days old");
@@ -276,7 +298,7 @@ public class MainForm extends JFrame implements EventSubscriber<ScanParse>
 
 		GridBagConstraints gbc_dateTextField = new GridBagConstraints();
 		gbc_dateTextField.fill = GridBagConstraints.BOTH;
-		gbc_dateTextField.insets = new Insets(0, 0, 5, 0);
+		gbc_dateTextField.insets = new Insets(0, 0, 5, 5);
 		gbc_dateTextField.gridx = 1;
 		gbc_dateTextField.gridy = 0;
 		panel.add(dateTextField, gbc_dateTextField);
@@ -303,7 +325,7 @@ public class MainForm extends JFrame implements EventSubscriber<ScanParse>
 		});
 		GridBagConstraints gbc_journalTextField = new GridBagConstraints();
 		gbc_journalTextField.anchor = GridBagConstraints.NORTH;
-		gbc_journalTextField.insets = new Insets(0, 0, 5, 0);
+		gbc_journalTextField.insets = new Insets(0, 0, 5, 5);
 		gbc_journalTextField.fill = GridBagConstraints.BOTH;
 		gbc_journalTextField.gridx = 1;
 		gbc_journalTextField.gridy = 1;
@@ -343,7 +365,7 @@ public class MainForm extends JFrame implements EventSubscriber<ScanParse>
 
 		lblNewLabel_2 = new JLabel("...Automatic Refresh Enabled...");
 		GridBagConstraints gbc_lblNewLabel_2 = new GridBagConstraints();
-		gbc_lblNewLabel_2.insets = new Insets(0, 0, 5, 0);
+		gbc_lblNewLabel_2.insets = new Insets(0, 0, 5, 5);
 		gbc_lblNewLabel_2.gridx = 1;
 		gbc_lblNewLabel_2.gridy = 2;
 		panel.add(lblNewLabel_2, gbc_lblNewLabel_2);
@@ -367,10 +389,33 @@ public class MainForm extends JFrame implements EventSubscriber<ScanParse>
 		browseFolderButton.setVerticalAlignment(SwingConstants.TOP);
 		GridBagConstraints gbc_browseFolderButton = new GridBagConstraints();
 		gbc_browseFolderButton.fill = GridBagConstraints.BOTH;
-		gbc_browseFolderButton.insets = new Insets(0, 0, 5, 5);
+		gbc_browseFolderButton.insets = new Insets(0, 0, 5, 0);
 		gbc_browseFolderButton.gridx = 2;
 		gbc_browseFolderButton.gridy = 1;
 		panel.add(browseFolderButton, gbc_browseFolderButton);
+
+		panel_1 = new JPanel();
+		GridBagConstraints gbc_panel_1 = new GridBagConstraints();
+		gbc_panel_1.insets = new Insets(0, 0, 0, 5);
+		gbc_panel_1.fill = GridBagConstraints.BOTH;
+		gbc_panel_1.gridx = 1;
+		gbc_panel_1.gridy = 3;
+		panel.add(panel_1, gbc_panel_1);
+
+		lblNewLabel_3 = new JLabel("Alert search");
+		panel_1.add(lblNewLabel_3);
+
+		alertSearch = new JTextField();
+		alertSearch.addKeyListener(new KeyAdapter() {
+			@Override
+			public void keyReleased(final KeyEvent e)
+			{
+				setAlertFilter(alertSearch.getText());
+			}
+
+		});
+		panel_1.add(alertSearch);
+		alertSearch.setColumns(10);
 
 		if (new File(journalDirectory).isDirectory())
 		{
