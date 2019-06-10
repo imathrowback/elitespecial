@@ -1,10 +1,10 @@
 package elitespecial;
 
-import java.util.Date;
+import org.joda.time.DateTime;
 
 public class EventData
 {
-	public EventData(final Date timestamp, final String bodyName, final String bodyType, final String out,
+	public EventData(final DateTime timestamp, final String bodyName, final String bodyType, final String out,
 			final boolean landable)
 	{
 		dateTime = timestamp;
@@ -16,7 +16,7 @@ public class EventData
 
 	public String bodyType;
 	public boolean landable;
-	public Date dateTime;
+	public DateTime dateTime;
 	public String body;
 	public String text;
 }

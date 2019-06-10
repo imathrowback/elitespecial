@@ -3,6 +3,7 @@ package elitespecial;
 import static javax.measure.unit.SI.METRE;
 
 import java.io.File;
+import java.io.FileWriter;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.nio.file.*;
@@ -13,7 +14,6 @@ import java.util.*;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
-import java.util.prefs.Preferences;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -23,7 +23,6 @@ import javax.measure.unit.NonSI;
 import javax.measure.unit.SI;
 import javax.measure.unit.Unit;
 
-import org.bushe.swing.event.EventBus;
 import org.codehaus.jettison.json.JSONArray;
 import org.codehaus.jettison.json.JSONObject;
 import org.joda.time.DateTime;
@@ -31,164 +30,32 @@ import org.joda.time.DurationFieldType;
 import org.joda.time.LocalDate;
 import org.joda.time.Period;
 import org.joda.time.format.PeriodFormat;
+
+import com.google.common.eventbus.Subscribe;
 import com.thoughtworks.xstream.XStream;
-import com.thoughtworks.xstream.annotations.XStreamOmitField;
 import com.thoughtworks.xstream.io.json.JettisonMappedXmlDriver;
-
-class Ring
-{
-	public String Name;
-	public String RingClass;
-	double MassMT;
-	double InnerRad;
-	double OuterRad;
-}
-
-class Parent
-{
-	String name;
-	long id;
-
-	@Override
-	public String toString()
-	{
-		return name + ":" + id;
-	}
-}
-
-class Event
-{
-	static Comparator<Event> comp = Comparator.comparing(Event::getTimestamp).thenComparing(Event::getID);
-
-	public Event()
-	{
-
-	}
-
-	static long gid = 90;
-
-	long id = gid++;
-
-	public long getID()
-	{
-		if (id == 0)
-			id = gid++;
-		return id;
-	}
-
-	public Date timestamp;
-
-	public Date getTimestamp()
-	{
-		return timestamp;
-	}
-
-}
-
-class FSDJump extends Event
-{
-	String StarSystem;
-}
-
-class Body extends Event
-{
-
-	@Override
-	public String toString()
-	{
-		return BodyName + ":" + BodyID;
-	}
-
-	public double Radius;
-	public String BodyName;
-	public int BodyID;
-	public double SemiMajorAxis;
-	public double Periapsis;
-	public String StarType;
-	public double RotationPeriod;
-	public String Atmosphere;
-	public String AtmosphereType;
-	public String PlanetClass;
-	public String ScanType;
-	public double SurfacePressure;
-	public double Eccentricity;
-
-	public double grav()
-	{
-		return SurfaceGravity / 9.80665;
-	}
-
-	public boolean isStar()
-	{
-		return StarType != null && !StarType.isEmpty();
-	}
-
-	public boolean TidalLock;
-	public double SurfaceTemperature;
-	public double SurfaceGravity;
-	public double MassEM;
-	public boolean Landable;
-	public String event;
-	public double OrbitalPeriod;
-	public String system;
-	@XStreamOmitField
-	public List<Ring> Rings = new LinkedList<>();
-	public double DistanceFromArrivalLS;
-	@XStreamOmitField
-	public List<Parent> Parents = new LinkedList<>();
-	public List<Body> BodyParents = new LinkedList<>();
-	public List<Body> BodyChildren = new LinkedList<>();
-	public String TerraformState;
-	String ref;
-	public double OrbitalInclination;
-
-	String parentString()
-	{
-		String s = "";
-		for (Parent p : Parents)
-			s = s + p.id;
-		return s;
-	}
-
-	String parentNString()
-	{
-		String s = "";
-		for (Parent p : Parents)
-			s = s + p.name;
-		return s;
-	}
-
-	public String tLocked()
-	{
-		if (TidalLock)
-			return "tidally locked";
-		else
-			return "NOT tidally locked";
-	}
-
-	public List<Parent> getParents(final String string)
-	{
-		return Parents.stream().filter(p -> p.name.equals(string)).collect(Collectors.toList());
-	}
-
-	public Body getBodyParent(final long id)
-	{
-		return BodyParents.stream().filter(p -> p.BodyID == (int) id).findFirst().orElse(null);
-	}
-
-}
 
 public class EliteSpecial
 {
 	static Unit<Length> LIGHT_SECOND = METRE.times(299792458);
 	public boolean shouldStop = false;
 
+	public EliteSpecial()
+	{
+		SpecialEventBus.eventBus.register(this);
+	}
+
 	public void stop()
 	{
 		shouldStop = true;
 	}
 
-	public void go(final String journalDirectory, final int days, final Consumer<EventData> eventConsumer)
+	public void goSystemMode(final String journalDirectory, final Consumer<EventData> eventConsumer)
+	{
+
+	}
+
+	public void goHistoryMode(final String journalDirectory, final int days, final Consumer<EventData> eventConsumer)
 			throws Exception
 	{
 		LocalDate startDate = new LocalDate().minusDays(days);
@@ -197,90 +64,103 @@ public class EliteSpecial
 
 		WatchService watcher = FileSystems.getDefault().newWatchService();
 		Path journalPath = new File(journalDirectory).toPath();
-		WatchKey key = journalPath.register(watcher, StandardWatchEventKinds.ENTRY_MODIFY);
+		WatchKey key = journalPath.register(watcher, StandardWatchEventKinds.ENTRY_MODIFY,
+				StandardWatchEventKinds.ENTRY_CREATE);
 		System.out.println("Scan journals");
-		eventConsumer.accept(new EventData(new Date(), "INFO", "", "Scanning journals...", false));
-		Set<String> collectedEvents = collectEvents(journalDirectory, lastEntry);
+		eventConsumer.accept(new EventData(new DateTime(), "INFO", "", "Scanning journals...", false));
+		Set<String> collectedEvents = collectEventsFromJournalDirectory(journalDirectory, lastEntry);
 		boolean collectBodies = true;
 		System.out.println("Begin watch");
+
 		while (!shouldStop)
 		{
 			List<WatchEvent<?>> events = key.pollEvents();
 			if (events != null && events.size() > 0)
 			{
-
 				for (WatchEvent<?> we : events)
 				{
 					Kind<?> kind = we.kind();
-					//					System.out.println("event kind:" + kind);
 					if (kind == StandardWatchEventKinds.ENTRY_MODIFY)
 					{
 						WatchEvent<Path> ev = (WatchEvent<Path>) we;
 						Path filename = journalPath.resolve(ev.context());
+						System.out.println("entry modify:" + filename);
 						if (filename.getFileName().toString().endsWith("log"))
 						{
-							//System.out.println(filename + ": modified");
-							//System.out.println("Journal modified: " + filename);
 							collectedEvents.addAll(collectEventsFromFile(filename.toFile(), lastEntry));
-							collectBodies = true;
+							System.out.println("got events from file:" + collectedEvents.size());
+							if (!collectedEvents.isEmpty())
+								collectBodies = true;
 						}
-					}
+					} else
+						System.err.println("unhandled kind:" + kind);
 				}
-				//			System.out.println(collectBodies);
 			}
 			if (collectBodies)
 			{
-				//	System.out.println("Review bodies");
-				//Map<String, Body> bodies = collectBodies(collectedEvents);
+				TreeSet<Event> sortedEvents = new TreeSet<>(Event.comp);
+				if (collectedEvents.size() > 0)
+				{
+					System.out.println("existing current system events:" + currentSystemEvents.size());
+					collectedEvents.addAll(currentSystemEvents);
+					mutateJournalsIntoEvents(collectedEvents, sortedEvents);
+					if (sortedEvents.size() > 0)
+					{
+						updateSystemForEvents(sortedEvents);
 
-				Set<Event> sortedEvents = new TreeSet<>(Event.comp);
+						List<Body> newCurrentSystemEvents = sortedEvents.stream().filter(e -> e instanceof Body)
+								.map(e -> (Body) e)
+								.filter(e -> e.system.equals(currentSystem))
+								.collect(Collectors.toList());
+						System.out.println("new current system events:" + newCurrentSystemEvents);
+						if (!newCurrentSystemEvents.isEmpty())
+						{
+							newCurrentSystemEvents.forEach(e -> currentSystemEvents.add(e.ref));
+							//currentSystemEvents.addAll(newCurrentSystemEvents);
+							// re-run the rules for the "current system events"
+							//runRulesForEvents(currentSystemEvents, eventConsumer);
+						}
 
-				parseEvents(collectedEvents, sortedEvents);
-
-				check(sortedEvents, eventConsumer);
+						runRulesForEvents(sortedEvents, eventConsumer);
+						lastEntry = sortedEvents.first().timestamp.toDate();
+						System.out.println("new last entry =" + lastEntry);
+					}
+				}
 				collectedEvents.clear();
-				lastEntry = new Date();
+				//new Date();
 				collectBodies = false;
-				EventBus.publish(new ScanParse("Done...watching for changes", 0, 0));
+				SpecialEventBus.eventBus.post(new ScanParse("Done...watching for changes", 0, 0));
 			}
 			Thread.sleep(100);
 		}
 
 	}
 
-	static class RecordEntry
+	private void updateSystemForEvents(final Set<Event> sortedEvents)
 	{
-		public double min;
-		public Body bmin;
-		public double max;
-		public Body bmax;
+		Stream<Body> bodies = sortedEvents.stream().filter(e -> e instanceof Body).map(e -> (Body) e);
+		bodies.forEach(b -> {
+			b.system = systemStateChangeEvents.lowerEntry(b.timestamp).getValue();
+		});
 
-		public RecordEntry(final double x, final Body b)
+	}
+
+	TreeMap<DateTime, String> systemStateChangeEvents = new TreeMap<>();
+	String currentSystem;
+	DateTime currentSystemTime;
+	Set<String> currentSystemEvents = new TreeSet<>();
+
+	@Subscribe
+	public void onSystemChange(final CurrentSystemEvent evt)
+	{
+		systemStateChangeEvents.put(evt.time, evt.system);
+		if (currentSystemTime == null || evt.time.isAfter(currentSystemTime) && !evt.system.equals(currentSystem))
 		{
-			min = max = x;
-			bmin = bmax = b;
+			System.out.println("change system from [" + currentSystem + "] to [" + evt.system + "]");
+			currentSystemEvents.clear();
+			currentSystem = evt.system;
+			currentSystemTime = evt.time;
 		}
-
-		public void update(final double x, final Body b)
-		{
-			if (x < min)
-			{
-				min = x;
-				bmin = b;
-			}
-			if (x > max)
-			{
-				max = x;
-				bmax = b;
-			}
-		}
-
-		@Override
-		public String toString()
-		{
-			return "" + f.format(min) + "[" + bmin.BodyName + "], " + f.format(max) + "[" + bmax.BodyName + "]";
-		}
-
 	}
 
 	static Map<String, RecordEntry> records = new TreeMap<>();
@@ -301,16 +181,62 @@ public class EliteSpecial
 
 	public static void main(final String args[]) throws Exception
 	{
-		Preferences prefs = Preferences.userNodeForPackage(MainForm.class);
+		final String dir = "c:\\ftemp";
+		final String file = "c:\\ftemp\\Journalx.log";
 
+		PrintWriter f = new PrintWriter(new File(file));
+		f.flush();
+		f.close();
+
+		Thread r = new Thread(() -> {
+			try
+			{
+				new EliteSpecial().goHistoryMode(dir, 100, (e) -> {
+				});
+			} catch (Exception e)
+			{
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		});
+		r.start();
+
+		Thread.sleep(2000);
+		out(file,
+				"{ \"timestamp\":\"2019-06-09T12:57:48Z\", \"event\":\"FSDJump\", \"StarSystem\":\"Swoilz RL-B d14-14\", \"SystemAddress\":491563944443, \"StarPos\":[199.62500,-458.81250,1437.31250], \"SystemAllegiance\":\"\", \"SystemEconomy\":\"$economy_None;\", \"SystemEconomy_Localised\":\"None\", \"SystemSecondEconomy\":\"$economy_None;\", \"SystemSecondEconomy_Localised\":\"None\", \"SystemGovernment\":\"$government_None;\", \"SystemGovernment_Localised\":\"None\", \"SystemSecurity\":\"$GAlAXY_MAP_INFO_state_anarchy;\", \"SystemSecurity_Localised\":\"Anarchy\", \"Population\":0, \"Body\":\"Swoilz RL-B d14-14 A\", \"BodyID\":1, \"BodyType\":\"Star\", \"JumpDist\":51.612, \"FuelUsed\":4.718585, \"FuelLevel\":63.497074 }\r\n");
+		Thread.sleep(2000);
+		out(file,
+				"{ \"timestamp\":\"2019-06-09T13:00:56Z\", \"event\":\"Scan\", \"ScanType\":\"Detailed\", \"BodyName\":\"Swoilz RL-B d14-14 A 2 c a\", \"BodyID\":17, \"Parents\":[ {\"Planet\":16}, {\"Planet\":11}, {\"Star\":1}, {\"Null\":0} ], \"DistanceFromArrivalLS\":1170.508789, \"TidalLock\":true, \"TerraformState\":\"\", \"PlanetClass\":\"Rocky body\", \"Atmosphere\":\"\", \"AtmosphereType\":\"None\", \"Volcanism\":\"major silicate vapour geysers volcanism\", \"MassEM\":0.000174, \"Radius\":399503.406250, \"SurfaceGravity\":0.434358, \"SurfaceTemperature\":234.227661, \"SurfacePressure\":0.000000, \"Landable\":true, \"Materials\":[ { \"Name\":\"sulphur\", \"Percent\":20.021624 }, { \"Name\":\"iron\", \"Percent\":17.916983 }, { \"Name\":\"carbon\", \"Percent\":16.836115 }, { \"Name\":\"nickel\", \"Percent\":13.551654 }, { \"Name\":\"phosphorus\", \"Percent\":10.778768 }, { \"Name\":\"chromium\", \"Percent\":8.057861 }, { \"Name\":\"manganese\", \"Percent\":7.399531 }, { \"Name\":\"zirconium\", \"Percent\":2.080531 }, { \"Name\":\"antimony\", \"Percent\":1.249991 }, { \"Name\":\"molybdenum\", \"Percent\":1.169968 }, { \"Name\":\"tin\", \"Percent\":0.936971 } ], \"Composition\":{ \"Ice\":0.000000, \"Rock\":0.968041, \"Metal\":0.031959 }, \"SemiMajorAxis\":4579699.500000, \"Eccentricity\":0.000000, \"OrbitalInclination\":49.649097, \"Periapsis\":222.797897, \"OrbitalPeriod\":58734.988281, \"RotationPeriod\":60679.679688, \"AxialTilt\":0.123455, \"WasDiscovered\":false, \"WasMapped\":false }\r\n"
+						+
+						"");
+
+		Thread.sleep(2000);
+		out(file,
+				"{ \"timestamp\":\"2019-06-09T13:00:58Z\", \"event\":\"Scan\", \"ScanType\":\"Detailed\", \"BodyName\":\"Swoilz RL-B d14-14 A 2 c\", \"BodyID\":16, \"Parents\":[ {\"Planet\":11}, {\"Star\":1}, {\"Null\":0} ], \"DistanceFromArrivalLS\":1170.500610, \"TidalLock\":true, \"TerraformState\":\"\", \"PlanetClass\":\"Rocky body\", \"Atmosphere\":\"\", \"AtmosphereType\":\"None\", \"Volcanism\":\"\", \"MassEM\":0.002584, \"Radius\":961852.562500, \"SurfaceGravity\":1.113161, \"SurfaceTemperature\":234.227661, \"SurfacePressure\":0.000000, \"Landable\":true, \"Materials\":[ { \"Name\":\"iron\", \"Percent\":20.155159 }, { \"Name\":\"sulphur\", \"Percent\":19.342897 }, { \"Name\":\"carbon\", \"Percent\":16.265375 }, { \"Name\":\"nickel\", \"Percent\":15.244516 }, { \"Name\":\"phosphorus\", \"Percent\":10.413372 }, { \"Name\":\"chromium\", \"Percent\":9.064444 }, { \"Name\":\"selenium\", \"Percent\":3.027327 }, { \"Name\":\"zirconium\", \"Percent\":2.340429 }, { \"Name\":\"cadmium\", \"Percent\":1.565139 }, { \"Name\":\"niobium\", \"Percent\":1.377498 }, { \"Name\":\"yttrium\", \"Percent\":1.203843 } ], \"Composition\":{ \"Ice\":0.000000, \"Rock\":0.905138, \"Metal\":0.094862 }, \"SemiMajorAxis\":3096050944.000000, \"Eccentricity\":0.000278, \"OrbitalInclination\":-0.041463, \"Periapsis\":12.174594, \"OrbitalPeriod\":1322055.500000, \"RotationPeriod\":1322066.875000, \"AxialTilt\":-1.239440, \"WasDiscovered\":false, \"WasMapped\":false }\r\n");
+
+		Thread.sleep(2000);
+		r.interrupt();
+		/*
+		Preferences prefs = Preferences.userNodeForPackage(MainForm.class);
+		
 		String journalDirectory = prefs.get("journalDirectory", MainForm.getFrontierSavedGAmesDirectory());
 		int days = prefs.getInt("days", 365);
-
-		new EliteSpecial().go(journalDirectory, days, (e) -> {
+		
+		new EliteSpecial().goHistoryMode(journalDirectory, days, (e) -> {
 		});
+		*/
 	}
 
-	public static void check(final Set<Event> sortedEvents, final Consumer<EventData> eventConsumer)
+	private static void out(final String file, final String string) throws Exception
+	{
+		try (FileWriter fw = new FileWriter(file, true))
+		{
+			fw.append(string);
+		}
+
+	}
+
+	public static void runRulesForEvents(final Set<Event> sortedEvents, final Consumer<EventData> eventConsumer)
 	{
 		Unit<Length> LIGHT_SECOND = METRE.times(299792458);
 		UnitConverter m2KM = SI.METER.getConverterTo(SI.KILOMETER);
@@ -569,6 +495,9 @@ public class EliteSpecial
 							+ " and an orbital period of " + periodString + "(" + f.format(orbitalDays) + " days)");
 				}
 
+				if (Math.abs(Math.toDegrees(b.AxialTilt)) > 70 && b.Landable)
+					writer.println("\t has high axial tilt " + f.format(Math.toDegrees(b.AxialTilt)));
+
 				// Fast orbit planets
 				if (!b.BodyName.contains(" Ring") && isEmpty(b.StarType))
 				{
@@ -613,10 +542,10 @@ public class EliteSpecial
 		return siblings;
 
 		/*
-
+		
 		List<Parent> nullParents = b.getParents("Null");
 		List<Parent> starParents = b.getParents("Star");
-
+		
 		Body bodyParent = b.getBodyParent(starParent.id);
 		System.out.println(
 				"body parent for body[" + b.BodyName + "], star id[" + starParent.id + "] = " + bodyParent.BodyName);
@@ -641,11 +570,11 @@ public class EliteSpecial
 
 	}
 
-	static class XStreamProvider
+	static class XStreamPool
 	{
 		LinkedBlockingQueue<XStream> streams = new LinkedBlockingQueue<>();
 
-		public XStreamProvider()
+		public XStreamPool()
 		{
 			for (int i = 0; i < 8; i++)
 				streams.add(make());
@@ -674,23 +603,15 @@ public class EliteSpecial
 		}
 	}
 
-	private static void parseEvents(final Set<String> collectedEvents, final Set<Event> sortedEvents)
+	private static void mutateJournalsIntoEvents(final Set<String> collectedEvents, final Set<Event> sortedEvents)
 	{
-
-		Map<String, Body> parsed = parseScans(collectedEvents);
+		Map<String, Body> parsed = mutateJournalStringsIntoBodies(collectedEvents);
 		sortedEvents.addAll(parsed.values());
-		if (sortedEvents.size() != parsed.size())
-		{
-			System.err.println("sorted [" + sortedEvents.size() + "] != parsed [" + parsed.size() + "]");
-			for (Body b : parsed.values())
-				System.out.println(b.id);
-		}
-
 	}
 
-	static Map<String, Body> parseScans(final Collection<String> collectedScans)
+	static Map<String, Body> mutateJournalStringsIntoBodies(final Collection<String> collectedScans)
 	{
-		XStreamProvider xstrProvider = new XStreamProvider();
+		XStreamPool xstrProvider = new XStreamPool();
 		Map<String, Body> bodies = Collections.synchronizedMap(new TreeMap<>());
 		//for (String s : collectedScans)
 		Integer totalSize = (collectedScans.size());
@@ -698,7 +619,17 @@ public class EliteSpecial
 		collectedScans.parallelStream().forEach(s -> {
 			try
 			{
-				EventBus.publish(new ScanParse("Scan", scanIndex.addAndGet(1), totalSize));
+				SpecialEventBus.eventBus.post(new ScanParse("Scan", scanIndex.addAndGet(1), totalSize));
+				if (s.contains("\"event\":\"Location") || s.contains("\"event\":\"FSDJump"))
+				{
+					JSONObject obj = new JSONObject(s);
+					DateTime time = DateTime.parse(obj.getString("timestamp"));
+					String system = obj.getString("StarSystem");
+					//System.out.println("post new system: " + system);
+					SpecialEventBus.eventBus.post(new CurrentSystemEvent(time, system));
+
+					return;
+				}
 				if (!s.contains("\"event\":\"Scan"))
 					return;
 				if (!s.contains("BodyName"))
@@ -713,11 +644,13 @@ public class EliteSpecial
 					//System.err.println("XML parse failed " + s);
 					return;
 				}
+				JSONObject obj = new JSONObject(s);
+
+				body.timestamp = new DateTime(obj.get("timestamp"));
 				body.ref = s;
 				body.Parents = new LinkedList<>();
 				if (s.contains("Ring") || s.contains("Parents"))
 				{
-					JSONObject obj = new JSONObject(s);
 					if (obj.has("Rings"))
 					{
 						body.Rings = new LinkedList<>();
@@ -779,14 +712,16 @@ public class EliteSpecial
 		return bodies;
 	}
 
-	private static Set<String> collectEvents(final String journalDirectory, final Date lastEntry) throws Exception
+	private static Set<String> collectEventsFromJournalDirectory(final String journalDirectory, final Date lastEntry)
+			throws Exception
 	{
 		Set<String> list = Collections.synchronizedSet(new TreeSet<>());
 
 		File[] files = new File(journalDirectory).listFiles();
 		if (files == null || files.length == 0)
 		{
-			EventBus.publish(new EventData(new Date(), "ERROR", "", "Invalid directory specified", false));
+			SpecialEventBus.eventBus
+					.post(new EventData(new DateTime(), "ERROR", "", "Invalid directory specified", false));
 			return list;
 		}
 		Integer totalSize = files.length;
@@ -795,7 +730,7 @@ public class EliteSpecial
 		Stream.of(files).parallel().forEach(f -> {
 			try
 			{
-				EventBus.publish(new ScanParse("Collect", scanIndex.addAndGet(1), totalSize));
+				SpecialEventBus.eventBus.post(new ScanParse("Collect", scanIndex.addAndGet(1), totalSize));
 				list.addAll(collectEventsFromFile(f, lastEntry));
 			} catch (Exception e)
 			{
@@ -813,12 +748,14 @@ public class EliteSpecial
 		try
 		{
 			String fileName = f.getName();
+			//System.out.println(fileName);
 			if (fileName.startsWith("Journal") && fileName.endsWith(".log"))
 			{
 				SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'z");
 				List<String> lines = Files.readAllLines(f.toPath());
 				for (String s : lines)
 				{
+					//	System.out.println(s);
 					if (!s.contains("Belt Cluster"))
 					{
 						JSONObject obj = new JSONObject(s);
@@ -826,6 +763,7 @@ public class EliteSpecial
 						{
 							String time = obj.getString("timestamp") + "GMT";
 							Date date = sdf.parse(time);
+							//System.out.println("date:" + date + " ==>" + lastEntry);
 							if (date.after(lastEntry))
 							{
 								String evt = obj.getString("event");

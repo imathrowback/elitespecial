@@ -11,7 +11,7 @@ public class EventTableModel extends DefaultTableModel
 			String.class };
 	static final String[] columnNames = new String[] { "Date/Time", "Body", "Body Type", "Landable", "Alert" };
 
-	public static int getColumId(final String string)
+	public static int getColumIndex(final String string)
 	{
 		return Arrays.asList(columnNames).indexOf(string);
 	}

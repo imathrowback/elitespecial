@@ -3,7 +3,6 @@ package elitespecial;
 import java.awt.BorderLayout;
 import java.awt.EventQueue;
 import java.util.Arrays;
-import java.util.Date;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.prefs.BackingStoreException;
@@ -11,14 +10,13 @@ import java.util.prefs.Preferences;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
-import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableColumn;
 import javax.swing.table.TableColumnModel;
 import javax.swing.table.TableRowSorter;
 
-import org.bushe.swing.event.EventBus;
-import org.bushe.swing.event.EventSubscriber;
 import org.joda.time.DateTime;
+
+import com.google.common.eventbus.Subscribe;
 
 import java.awt.GridBagLayout;
 import java.awt.GridBagConstraints;
@@ -28,13 +26,12 @@ import java.io.File;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
-public class MainForm extends JFrame implements EventSubscriber<ScanParse>
+public class MainForm extends JFrame
 {
 	Thread scanThread;
 	String journalDirectory = "";
 	int days = 0;
 	EliteSpecial es;
-	BusScanEventHandler scanEventHandler = new BusScanEventHandler(this);
 
 	private final JPanel contentPane;
 	private final JTable table;
@@ -121,6 +118,7 @@ public class MainForm extends JFrame implements EventSubscriber<ScanParse>
 	 */
 	public static void main(final String[] args)
 	{
+
 		SwingUtilities.invokeLater(new Runnable() {
 			@Override
 			public void run()
@@ -130,7 +128,8 @@ public class MainForm extends JFrame implements EventSubscriber<ScanParse>
 					UIManager.setLookAndFeel(
 							UIManager.getSystemLookAndFeelClassName());
 					MainForm frame = new MainForm();
-					EventBus.subscribe(ScanParse.class, frame);
+					SpecialEventBus.eventBus.register(frame);
+
 					frame.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
 					frame.addWindowListener(new WindowAdapter() {
 						@Override
@@ -159,9 +158,34 @@ public class MainForm extends JFrame implements EventSubscriber<ScanParse>
 
 	public void addEvent(final EventData ed)
 	{
-		DefaultTableModel tm = (DefaultTableModel) table.getModel();
-		tm.addRow(new Object[] { new DateTime(ed.dateTime.getTime()), ed.body, ed.bodyType, ed.landable, ed.text });
-		table.changeSelection(table.getRowCount() - 1, 0, false, false);
+		EventTableModel tm = (EventTableModel) table.getModel();
+
+		// don't add if we already have one with the same date and body
+		if (exists(ed, tm))
+		{
+			// no need to readd it
+		} else
+		{
+			tm.addRow(new Object[] { ed.dateTime, ed.body, ed.bodyType, ed.landable, ed.text });
+			table.changeSelection(table.getRowCount() - 1, 0, false, false);
+		}
+	}
+
+	private boolean exists(final EventData ed, final EventTableModel tm)
+	{
+		boolean found = false;
+		int bodyI = tm.findColumn("Body");
+		int dateTimeI = tm.findColumn("Date/Time");
+
+		for (int i = 0; i < tm.getRowCount(); i++)
+		{
+			if (ed.body.equals(tm.getValueAt(i, bodyI)) && ed.dateTime.equals(tm.getValueAt(i, dateTimeI)))
+			{
+				return true;
+			}
+		}
+		return false;
+
 	}
 
 	public void clearEvents()
@@ -175,11 +199,11 @@ public class MainForm extends JFrame implements EventSubscriber<ScanParse>
 		try
 		{
 
-			es.go(journalDirectory, days, (e) -> addEvent(e));
+			es.goHistoryMode(journalDirectory, days, (e) -> addEvent(e));
 		} catch (Exception e)
 		{
 			e.printStackTrace();
-			addEvent(new EventData(new Date(), "ERROR", "", e + "", false));
+			addEvent(new EventData(new DateTime(), "ERROR", "", e + "", false));
 		}
 	};
 
@@ -189,6 +213,9 @@ public class MainForm extends JFrame implements EventSubscriber<ScanParse>
 	private final JPanel panel_1;
 	private final JLabel lblNewLabel_3;
 	private final JTextField alertSearch;
+	private String currentSystem;
+	private DateTime currentSystemTime;
+	private final JCheckBox currentSystemCheck;
 
 	void beginScan()
 	{
@@ -218,12 +245,40 @@ public class MainForm extends JFrame implements EventSubscriber<ScanParse>
 
 	}
 
+	String lastFilter;
+
+	private void refreshSystemFilter(final String system)
+	{
+
+		//if (days == 0)
+		//	system = "";
+
+		TableRowSorter<EventTableModel> sorter = (TableRowSorter<EventTableModel>) table.getRowSorter();
+		try
+		{
+			String filter = "";
+			if (currentSystemCheck.isSelected())
+				filter = system;
+			/** avoid redundant calls to set row filter, it causes "exceptions" in the message pump if otherwise */
+			if (filter.equals(lastFilter))
+				return;
+			lastFilter = filter;
+			System.out.println("set body filter to '" + filter + "' [" + system + "]");
+
+			sorter.setRowFilter(RowFilter.regexFilter(filter, EventTableModel.getColumIndex("Body")));
+		} catch (Exception ex)
+		{
+			// ignore errors
+		}
+
+	}
+
 	private void setAlertFilter(final String text)
 	{
 		TableRowSorter<EventTableModel> sorter = (TableRowSorter<EventTableModel>) table.getRowSorter();
 		try
 		{
-			sorter.setRowFilter(RowFilter.regexFilter("(?i)" + text, EventTableModel.getColumId("Alert")));
+			sorter.setRowFilter(RowFilter.regexFilter("(?i)" + text, EventTableModel.getColumIndex("Alert")));
 		} catch (Exception ex)
 		{
 			// ignore errors
@@ -303,6 +358,20 @@ public class MainForm extends JFrame implements EventSubscriber<ScanParse>
 		gbc_dateTextField.gridy = 0;
 		panel.add(dateTextField, gbc_dateTextField);
 		dateTextField.setColumns(10);
+
+		currentSystemCheck = new JCheckBox("Current System");
+		currentSystemCheck.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(final ActionEvent e)
+			{
+				refreshSystemFilter(currentSystem);
+			}
+		});
+		GridBagConstraints gbc_currentSystemCheck = new GridBagConstraints();
+		gbc_currentSystemCheck.insets = new Insets(0, 0, 5, 0);
+		gbc_currentSystemCheck.gridx = 2;
+		gbc_currentSystemCheck.gridy = 0;
+		panel.add(currentSystemCheck, gbc_currentSystemCheck);
 
 		lblNewLabel_1 = new JLabel("Journal Directory");
 		GridBagConstraints gbc_lblNewLabel_1 = new GridBagConstraints();
@@ -396,7 +465,7 @@ public class MainForm extends JFrame implements EventSubscriber<ScanParse>
 
 		panel_1 = new JPanel();
 		GridBagConstraints gbc_panel_1 = new GridBagConstraints();
-		gbc_panel_1.insets = new Insets(0, 0, 0, 5);
+		gbc_panel_1.insets = new Insets(0, 0, 5, 5);
 		gbc_panel_1.fill = GridBagConstraints.BOTH;
 		gbc_panel_1.gridx = 1;
 		gbc_panel_1.gridy = 3;
@@ -435,15 +504,15 @@ public class MainForm extends JFrame implements EventSubscriber<ScanParse>
 
 	}
 
-	@Override
-	public void onEvent(final ScanParse event)
+	@Subscribe
+	public void onScanParseEvent(final ScanParse event)
 	{
 		EventQueue.invokeLater(new Runnable() {
 			@Override
 			public void run()
 			{
 				if (event.type.contains("ERROR"))
-					addEvent(new EventData(new Date(), "ERROR", "", event.type, false));
+					addEvent(new EventData(new DateTime(), "ERROR", "", event.type, false));
 				if (event.totalSize == 0)
 					lblNewLabel_2.setText(event.type);
 				else
@@ -451,4 +520,24 @@ public class MainForm extends JFrame implements EventSubscriber<ScanParse>
 			}
 		});
 	}
+
+	@Subscribe
+	public void onEventDataEvent(final EventData event)
+	{
+		addEvent(event);
+
+	}
+
+	@Subscribe
+	public void onSystemChange(final CurrentSystemEvent evt)
+	{
+		if (currentSystemTime == null || evt.time.isAfter(currentSystemTime))
+		{
+			currentSystem = evt.system;
+			currentSystemTime = evt.time;
+			refreshSystemFilter(evt.system);
+		}
+
+	}
+
 }
