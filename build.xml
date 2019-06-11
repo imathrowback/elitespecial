@@ -1,4 +1,4 @@
-<project name="riftools" xmlns:ivy="antlib:org.apache.ivy.ant" default="jar">
+<project name="elitespecial" xmlns:ivy="antlib:org.apache.ivy.ant" default="jar">
 
 	<property name="jarfile" value="build/jar/elitespecial.jar"/>
 	<property name="MainClass" value="elitespecial.MainForm"/>
