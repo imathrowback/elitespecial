@@ -11,6 +11,7 @@ import java.nio.file.WatchEvent.Kind;
 import java.text.NumberFormat;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.Map.Entry;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
@@ -27,7 +28,6 @@ import org.codehaus.jettison.json.JSONArray;
 import org.codehaus.jettison.json.JSONObject;
 import org.joda.time.DateTime;
 import org.joda.time.DurationFieldType;
-import org.joda.time.LocalDate;
 import org.joda.time.Period;
 import org.joda.time.format.PeriodFormat;
 
@@ -58,9 +58,9 @@ public class EliteSpecial
 	public void goHistoryMode(final String journalDirectory, final int days, final Consumer<EventData> eventConsumer)
 			throws Exception
 	{
-		LocalDate startDate = new LocalDate().minusDays(days);
+		DateTime startDate = new DateTime().minusDays(days);
 		//startDate = new LocalDate().minusYears(10);
-		Date lastEntry = startDate.toDateMidnight().toDate();
+		DateTime lastEntry = startDate;
 
 		WatchService watcher = FileSystems.getDefault().newWatchService();
 		Path journalPath = new File(journalDirectory).toPath();
@@ -116,13 +116,10 @@ public class EliteSpecial
 						if (!newCurrentSystemEvents.isEmpty())
 						{
 							newCurrentSystemEvents.forEach(e -> currentSystemEvents.add(e.ref));
-							//currentSystemEvents.addAll(newCurrentSystemEvents);
-							// re-run the rules for the "current system events"
-							//runRulesForEvents(currentSystemEvents, eventConsumer);
 						}
 
 						runRulesForEvents(sortedEvents, eventConsumer);
-						lastEntry = sortedEvents.first().timestamp.toDate();
+						lastEntry = sortedEvents.first().timestamp;
 						System.out.println("new last entry =" + lastEntry);
 					}
 				}
@@ -140,7 +137,19 @@ public class EliteSpecial
 	{
 		Stream<Body> bodies = sortedEvents.stream().filter(e -> e instanceof Body).map(e -> (Body) e);
 		bodies.forEach(b -> {
-			b.system = systemStateChangeEvents.lowerEntry(b.timestamp).getValue();
+			Entry<DateTime, String> entry = systemStateChangeEvents.lowerEntry(b.timestamp);
+
+			if (entry == null)
+			{
+				//System.out.flush();
+
+				//System.err.println("Unable to find system change entry for " + b.BodyName + " @" + b.timestamp);
+				//systemStateChangeEvents.entrySet().forEach(x -> {
+				//	System.err.println(x.getValue() + ":" + x.getKey());
+				//});
+				//System.exit(1);
+			} else
+				b.system = entry.getValue();
 		});
 
 	}
@@ -154,6 +163,7 @@ public class EliteSpecial
 	public void onSystemChange(final CurrentSystemEvent evt)
 	{
 		systemStateChangeEvents.put(evt.time, evt.system);
+		//System.out.println("recording new system: " + evt.time + ":" + evt.system);
 		if (currentSystemTime == null || evt.time.isAfter(currentSystemTime) && !evt.system.equals(currentSystem))
 		{
 			System.out.println("change system from [" + currentSystem + "] to [" + evt.system + "]");
@@ -624,8 +634,10 @@ public class EliteSpecial
 				{
 					JSONObject obj = new JSONObject(s);
 					DateTime time = DateTime.parse(obj.getString("timestamp"));
+					String event = obj.getString("event");
 					String system = obj.getString("StarSystem");
-					//System.out.println("post new system: " + system);
+
+					//System.out.println("post new system: " + system + ":" + event);
 					SpecialEventBus.eventBus.post(new CurrentSystemEvent(time, system));
 
 					return;
@@ -646,7 +658,7 @@ public class EliteSpecial
 				}
 				JSONObject obj = new JSONObject(s);
 
-				body.timestamp = new DateTime(obj.get("timestamp"));
+				body.timestamp = DateTime.parse(obj.getString("timestamp"));
 				body.ref = s;
 				body.Parents = new LinkedList<>();
 				if (s.contains("Ring") || s.contains("Parents"))
@@ -712,7 +724,8 @@ public class EliteSpecial
 		return bodies;
 	}
 
-	private static Set<String> collectEventsFromJournalDirectory(final String journalDirectory, final Date lastEntry)
+	private static Set<String> collectEventsFromJournalDirectory(final String journalDirectory,
+			final DateTime lastEntry)
 			throws Exception
 	{
 		Set<String> list = Collections.synchronizedSet(new TreeSet<>());
@@ -742,7 +755,7 @@ public class EliteSpecial
 
 	}
 
-	private static Set<String> collectEventsFromFile(final File f, final Date lastEntry) throws Exception
+	private static Set<String> collectEventsFromFile(final File f, final DateTime lastEntry) throws Exception
 	{
 		Set<String> list = new TreeSet<>();
 		try
@@ -761,12 +774,13 @@ public class EliteSpecial
 						JSONObject obj = new JSONObject(s);
 						try
 						{
-							String time = obj.getString("timestamp") + "GMT";
-							Date date = sdf.parse(time);
+							//String time = obj.getString("timestamp") + "GMT";
+							DateTime date = DateTime.parse(obj.getString("timestamp"));
+							//sdf.parse(time);
 							//System.out.println("date:" + date + " ==>" + lastEntry);
-							if (date.after(lastEntry))
+							if (date.isAfter(lastEntry))
 							{
-								String evt = obj.getString("event");
+								//String evt = obj.getString("event");
 								//if (evt.equals("Scan"))
 								list.add(s);
 							}
